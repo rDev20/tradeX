@@ -1,0 +1,102 @@
+name: Deploy VM
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vm-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy demo to VM
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    env:
+      VM_HOST: ${{ secrets.VM_HOST }}
+      VM_USER: ${{ secrets.VM_USER }}
+      VM_PORT: ${{ secrets.VM_PORT || '22' }}
+      VM_DEPLOY_DIR: ${{ secrets.VM_DEPLOY_DIR || '/opt/tradex' }}
+      VM_SUBDOMAIN: ${{ secrets.VM_SUBDOMAIN || '103-240-24-3.nip.io' }}
+      VM_SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$VM_HOST" || (echo "Missing VM_HOST secret" && exit 1)
+          test -n "$VM_USER" || (echo "Missing VM_USER secret" && exit 1)
+          test -n "$VM_SSH_PRIVATE_KEY" || (echo "Missing VM_SSH_PRIVATE_KEY secret" && exit 1)
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VM_SSH_PRIVATE_KEY" > ~/.ssh/tradex_vm_key
+          chmod 600 ~/.ssh/tradex_vm_key
+          ssh-keyscan -p "$VM_PORT" -H "$VM_HOST" >> ~/.ssh/known_hosts
+
+      - name: Prepare VM directory
+        run: |
+          ssh -i ~/.ssh/tradex_vm_key -p "$VM_PORT" "$VM_USER@$VM_HOST" \
+            "sudo mkdir -p '$VM_DEPLOY_DIR' && sudo chown -R '$VM_USER:$VM_USER' '$VM_DEPLOY_DIR'"
+
+      - name: Create remote safety snapshot
+        run: |
+          SNAPSHOT="tradex-demo-code-$(date -u +%Y%m%dT%H%M%SZ).tgz"
+          ssh -i ~/.ssh/tradex_vm_key -p "$VM_PORT" "$VM_USER@$VM_HOST" "
+            sudo mkdir -p '$VM_DEPLOY_DIR/backups' &&
+            if [ -d '$VM_DEPLOY_DIR/demo' ]; then
+              sudo tar -C '$VM_DEPLOY_DIR' \
+                --exclude='demo/.env' \
+                --exclude='demo/web/.env' \
+                --exclude='demo/demo.db' \
+                --exclude='demo/demo.db-shm' \
+                --exclude='demo/demo.db-wal' \
+                --exclude='demo/web/node_modules' \
+                --exclude='demo/web/.next' \
+                --exclude='demo/worker/.venv' \
+                --exclude='demo/worker/__pycache__' \
+                --exclude='demo/worker/sessions' \
+                --exclude='demo/qa/node_modules' \
+                --exclude='*.pyc' \
+                --exclude='*.log' \
+                -czf '$VM_DEPLOY_DIR/backups/$SNAPSHOT' demo &&
+              sudo chown '$VM_USER:$VM_USER' '$VM_DEPLOY_DIR/backups/$SNAPSHOT';
+            fi"
+
+      - name: Sync demo code
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '.next' \
+            --exclude '.venv' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude 'demo.db' \
+            --exclude 'demo.db-journal' \
+            --exclude 'demo.db-shm' \
+            --exclude 'demo.db-wal' \
+            --exclude 'sessions/*.session' \
+            --exclude 'sessions/*.session-journal' \
+            --exclude '*.log' \
+            --exclude '.env' \
+            --exclude '.env.local' \
+            -e "ssh -i ~/.ssh/tradex_vm_key -p $VM_PORT" \
+            demo/ "$VM_USER@$VM_HOST:$VM_DEPLOY_DIR/demo/"
+
+      - name: Deploy on VM
+        run: |
+          ssh -i ~/.ssh/tradex_vm_key -p "$VM_PORT" "$VM_USER@$VM_HOST" \
+            "sudo SUBDOMAIN='$VM_SUBDOMAIN' bash '$VM_DEPLOY_DIR/demo/infra/deploy.sh'"
+
+      - name: Smoke check public URL
+        run: |
+          curl --fail --location --max-time 30 "https://$VM_SUBDOMAIN/login" >/dev/null

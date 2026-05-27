@@ -72,6 +72,48 @@ From any browser: **https://103-240-24-3.nip.io**
 
 ## Subsequent deploys (after code changes)
 
+### Standard delivery flow
+
+Use this order for normal work:
+
+1. Make code changes locally.
+2. Run local validation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/validate-local.ps1
+```
+
+For deeper feature QA, pass explicit phases, for example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/validate-local.ps1 -QaPhases m0.2,m0.3
+```
+
+3. Commit and push to `main`.
+4. GitHub Actions runs CI.
+5. If CI passes on `main`, the `Deploy VM` workflow syncs `demo/` to the VM, runs
+   `deploy.sh`, and smoke-checks `https://103-240-24-3.nip.io/login`.
+
+The public beta URL remains:
+
+```text
+https://103-240-24-3.nip.io
+```
+
+Required GitHub repository secrets for automatic deploy:
+
+| Secret | Value |
+|---|---|
+| `VM_HOST` | VM IP or hostname, e.g. `103.240.24.3` |
+| `VM_USER` | SSH user, usually `ubuntu` |
+| `VM_SSH_PRIVATE_KEY` | Private key that can SSH to the VM |
+| `VM_PORT` | Optional, defaults to `22` |
+| `VM_DEPLOY_DIR` | Optional, defaults to `/opt/tradex` |
+| `VM_SUBDOMAIN` | Optional, defaults to `103-240-24-3.nip.io` |
+
+Keep branch protection enabled on `main`: require the CI workflow to pass before
+merging, and use pull requests for non-emergency changes.
+
 ### Sync discipline
 
 Use local code as the source of truth. The VM is a deploy target, not a second
