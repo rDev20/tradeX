@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Global key-value config — for installation-wide flags only.
+// Per-user state lives on UserServiceStatus / scoped models.
+model Setting {
+  key   String @id
+  value String
+}
+
+model User {
+  id              Int      @id @default(autoincrement())
+  email           String   @unique
+  passwordHash    String
+  fullName        String
+  phone           String
+  role            String   @default("user") // admin | user
+  panEncrypted    String?
+  address         String?
+  riskCapital     String?
+  riskFrequency   String?
+  riskTolerance   String?
+  onboardingStep  String   @default("capabilities")
+  onboardedAt     DateTime?
+  createdAt       DateTime @default(now())
+  lastLoginAt     DateTime?
+
+  telegramAccount UserTelegramAccount?
+  serviceStatus   UserServiceStatus?
+  channels        Channel[]
+  messages        Message[]
+  signals         ParsedSignal[]
+  trades          PaperTrade[]
+  tradeSlips      TradeSlip[]
+  favorites       Favorite[]
+  serviceEvents   ServiceEvent[]
+  tradePlan       UserTradePlan?
+}
+
+model UserTelegramAccount {
+  id                    Int      @id @default(autoincrement())
+  userId                Int      @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone                 String
+  tgUserId              String?
+  tgFirstName           String?
+  tgUsername            String?
+  sessionPath           String
+  phoneCodeHashTemp     String?
+  phoneCodeRequestedAt  DateTime?
+  needs2FA              Boolean  @default(false)
+  connectedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model UserServiceStatus {
+  userId    Int      @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   @default("stopped") // running | stopped
+  updatedAt DateTime @updatedAt
+}
+
+model Channel {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tgId      String
+  name      String
+  username  String?
+  selected  Boolean        @default(false)
+  mode      String         @default("evaluation")
+  budget    Float          @default(100000)
+  addedAt   DateTime       @default(now())
+  messages  Message[]
+  signals   ParsedSignal[]
+  trades    PaperTrade[]
+  tradeSlips TradeSlip[]
+
+  @@unique([userId, tgId])
+  @@index([userId])
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId   Int
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  tgMessageId String
+  text        String
+  postedAt    DateTime
+  parsed      Boolean  @default(false)
+  tradeSlip   TradeSlip?
+
+  @@unique([channelId, tgMessageId])
+  @@index([userId, postedAt])
+  @@index([channelId, postedAt])
+}
+
+model ParsedSignal {
+  id         Int          @id @default(autoincrement())
+  userId     Int
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId  Int          @unique
+  channelId  Int
+  channel    Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  symbol     String
+  side       String
+  instrument String
+  strike     Float?
+  entry      Float
+  stopLoss   Float?
+  target     Float?
+  confidence Float        @default(0.5)
+  raw        String
+  parser     String       @default("heuristic")
+  parsedAt   DateTime     @default(now())
+  trade      PaperTrade?
+  tradeSlip  TradeSlip?
+
+  @@index([userId])
+}
+
+model PaperTrade {
+  id         Int          @id @default(autoincrement())
+  userId     Int
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signalId   Int          @unique
+  signal     ParsedSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  channelId  Int
+  channel    Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  symbol     String
+  side       String
+  instrument String       @default("EQ") // EQ | INDEX | CE | PE | FUT
+  entry      Float
+  stopLoss   Float?
+  target     Float?
+  exit       Float?
+  exitReason String?
+  qty        Int          @default(1)
+  pnl        Float?       // net P&L (after costs)
+  grossPnl   Float?       // pre-cost P&L
+  costs      Float?       // total transaction costs (STT + brokerage + GST + SEBI + stamp + exchange)
+  costsBreakdown String?  // JSON: { brokerage, stt, exchange, sebi, stamp, gst }
+  openedAt   DateTime     @default(now())
+  closedAt   DateTime?
+  tradeSlip  TradeSlip?
+
+  @@index([userId])
+  @@index([channelId])
+}
+
+model TradeSlip {
+  id          Int              @id @default(autoincrement())
+  userId      Int
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId   Int
+  channel     Channel          @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  messageId   Int              @unique
+  message     Message          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  signalId    Int?             @unique
+  signal      ParsedSignal?    @relation(fields: [signalId], references: [id], onDelete: SetNull)
+  tradeId     Int?             @unique
+  trade       PaperTrade?      @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+  status      String           @default("RECEIVED") // RECEIVED | PARSING | READY | EXECUTED | TRACKING | CLOSED | FAILED
+  moneyMode   String           @default("paper")
+  symbol      String?
+  side        String?
+  instrument  String?
+  entry       Float?
+  stopLoss    Float?
+  target      Float?
+  receivedAt  DateTime
+  executedAt  DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  events      TradeSlipEvent[]
+  targetLegs  TradeTargetLeg[]
+
+  @@index([userId, channelId, receivedAt])
+  @@index([status])
+}
+
+model TradeSlipEvent {
+  id        Int       @id @default(autoincrement())
+  slipId    Int
+  slip      TradeSlip @relation(fields: [slipId], references: [id], onDelete: Cascade)
+  stage     String
+  label     String
+  detail    String?
+  status    String    @default("done") // done | active | failed | pending
+  occurredAt DateTime @default(now())
+  position  Int
+
+  @@index([slipId, position])
+}
+
+model TradeTargetLeg {
+  id        Int       @id @default(autoincrement())
+  slipId    Int
+  slip      TradeSlip @relation(fields: [slipId], references: [id], onDelete: Cascade)
+  label     String
+  price     Float
+  status    String    @default("pending") // pending | hit | missed
+  hitAt     DateTime?
+  position  Int
+
+  @@index([slipId, position])
+}
+
+// Global ticker registry — same data for everyone (NIFTY is NIFTY).
+model Symbol {
+  ticker      String      @id
+  displayName String
+  kind        String
+  ticks       PriceTick[]
+}
+
+// Global price ticks — same data for everyone.
+model PriceTick {
+  id     Int      @id @default(autoincrement())
+  ticker String
+  symbol Symbol   @relation(fields: [ticker], references: [ticker])
+  price  Float
+  change Float?
+  at     DateTime @default(now())
+
+  @@index([ticker, at])
+}
+
+// Per-user favorites
+model Favorite {
+  userId   Int
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker   String
+  position Int      @default(0)
+  addedAt  DateTime @default(now())
+
+  @@id([userId, ticker])
+  @@index([userId])
+}
+
+model ServiceEvent {
+  id     Int      @id @default(autoincrement())
+  userId Int
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event  String
+  at     DateTime @default(now())
+  note   String?
+
+  @@index([userId, at])
+}
+
+// Admin-owned Telegram source channels. These replace per-user Telegram ingestion.
+model SourceChannel {
+  id        Int             @id @default(autoincrement())
+  tgId      String          @unique
+  name      String
+  username  String?
+  selected  Boolean         @default(false)
+  addedAt   DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  messages  SourceMessage[]
+  signals   SourceSignal[]
+
+  @@index([selected])
+}
+
+model SourceMessage {
+  id          Int           @id @default(autoincrement())
+  channelId   Int
+  channel     SourceChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  tgMessageId String
+  text        String
+  postedAt    DateTime
+  parsed      Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  signal      SourceSignal?
+
+  @@unique([channelId, tgMessageId])
+  @@index([postedAt])
+  @@index([channelId, postedAt])
+}
+
+model SourceSignal {
+  id         Int           @id @default(autoincrement())
+  messageId  Int           @unique
+  message    SourceMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  channelId  Int
+  channel    SourceChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  symbol     String
+  side       String
+  instrument String
+  strike     Float?
+  entry      Float
+  stopLoss   Float?
+  target     Float?
+  confidence Float         @default(0.5)
+  raw        String
+  parser     String        @default("heuristic")
+  parsedAt   DateTime      @default(now())
+
+  @@index([channelId])
+  @@index([parsedAt])
+}
+
+model UserTradePlan {
+  userId    Int      @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  minFund   Float    @default(10000)
+  lots      Int      @default(1)
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

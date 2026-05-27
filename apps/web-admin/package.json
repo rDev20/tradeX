@@ -1,0 +1,24 @@
+{
+  "name": "@tradex/web-admin",
+  "version": "0.0.1",
+  "private": true,
+  "description": "tradeX admin console (internal) — users, ops, billing, compliance",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .next .turbo"
+  },
+  "dependencies": {
+    "@tradex/design-tokens": "workspace:*",
+    "@tradex/sdk-client": "workspace:*",
+    "@tradex/types": "workspace:*",
+    "@tradex/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

@@ -1,0 +1,23 @@
+[Unit]
+Description=tradeX Python worker (Telegram ingest, parser, paper-trade, yfinance)
+After=network.target tradex-web.service
+
+[Service]
+Type=simple
+User=tradex
+WorkingDirectory=/opt/tradex/demo/worker
+EnvironmentFile=/opt/tradex/demo/.env
+ExecStart=/opt/tradex/demo/worker/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

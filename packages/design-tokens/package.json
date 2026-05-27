@@ -1,0 +1,21 @@
+{
+  "name": "@tradex/design-tokens",
+  "version": "0.0.1",
+  "private": true,
+  "description": "tradeX design tokens — colors, typography, spacing, motion",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./css": "./src/tokens.css",
+    "./tailwind": "./src/tailwind.preset.ts"
+  },
+  "scripts": {
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@tradex/llm-prompts",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Versioned LLM system prompts + regression golden set",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test:golden": "vitest run tests/golden.test.ts"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

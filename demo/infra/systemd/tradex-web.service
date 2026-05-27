@@ -1,0 +1,25 @@
+[Unit]
+Description=tradeX web (Next.js production)
+After=network.target
+
+[Service]
+Type=simple
+User=tradex
+WorkingDirectory=/opt/tradex/demo/web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/opt/tradex/demo/web/.env
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+{
+  "name": "@tradex/tsconfig",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared tsconfig bases",
+  "files": [
+    "base.json",
+    "nextjs.json",
+    "node.json",
+    "react-library.json"
+  ]
+}

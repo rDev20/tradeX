@@ -1,0 +1,40 @@
+# tradeX — Code ownership
+#
+# Every directory in the repo must have an owner. Use CODEOWNERS to enforce review.
+# Update this file when team roles change.
+
+# Root infra / monorepo tooling
+/package.json                    @tradex/platform-leads
+/turbo.json                      @tradex/platform-leads
+/pnpm-workspace.yaml             @tradex/platform-leads
+/.github/                        @tradex/platform-leads
+/infra/                          @tradex/platform-leads @tradex/security
+
+# Frontend
+/apps/web/                       @tradex/frontend
+/apps/web-admin/                 @tradex/frontend @tradex/platform-leads
+/apps/marketing/                 @tradex/frontend @tradex/marketing
+
+# API
+/apps/api/                       @tradex/backend
+
+# Workers
+/apps/workers/                   @tradex/backend
+/apps/workers/executor/          @tradex/backend @tradex/trading-core
+/apps/workers/paper-engine/      @tradex/backend @tradex/trading-core
+
+# Shared packages
+/packages/ui/                    @tradex/frontend @tradex/design
+/packages/design-tokens/         @tradex/design @tradex/frontend
+/packages/types/                 @tradex/backend @tradex/frontend
+/packages/risk-engine/           @tradex/trading-core
+/packages/trade-core/            @tradex/trading-core
+/packages/sdk-broker/            @tradex/trading-core
+/packages/llm-prompts/           @tradex/ml
+
+# Docs
+/docs/                           @tradex/founders @tradex/platform-leads
+
+# Security-sensitive
+/infra/docker/                   @tradex/platform-leads @tradex/security
+/services/                       @tradex/backend @tradex/platform-leads

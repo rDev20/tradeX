@@ -1,0 +1,20 @@
+{
+  "name": "@tradex/risk-engine",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Pre-trade rail checks — shared between paper engine and live executor",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@tradex/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

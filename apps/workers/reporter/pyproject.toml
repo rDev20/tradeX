@@ -1,0 +1,19 @@
+[project]
+name = "tradex-reporter"
+version = "0.0.1"
+description = "tradeX — daily/weekly/monthly report + tax export generator"
+requires-python = ">=3.12"
+dependencies = [
+    "clickhouse-driver>=0.2",
+    "asyncpg>=0.29",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.9",
+    "reportlab>=4.2",
+    "boto3>=1.35",
+    "structlog>=24.4",
+    "ddtrace>=2.15",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.6", "mypy>=1.11"]

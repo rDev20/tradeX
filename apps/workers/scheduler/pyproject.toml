@@ -1,0 +1,18 @@
+[project]
+name = "tradex-scheduler"
+version = "0.0.1"
+description = "tradeX — scheduled jobs (Kite reauth, EOD exits, trade cutoffs)"
+requires-python = ">=3.12"
+dependencies = [
+    "redis>=5.0",
+    "asyncpg>=0.29",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.9",
+    "temporalio>=1.8",
+    "structlog>=24.4",
+    "pytz>=2024.1",
+    "ddtrace>=2.15",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.6", "mypy>=1.11"]

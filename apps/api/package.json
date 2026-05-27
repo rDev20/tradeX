@@ -1,0 +1,31 @@
+{
+  "name": "@tradex/api",
+  "version": "0.0.1",
+  "private": true,
+  "description": "tradeX primary API — NestJS",
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@tradex/risk-engine": "workspace:*",
+    "@tradex/sdk-broker": "workspace:*",
+    "@tradex/trade-core": "workspace:*",
+    "@tradex/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/test-utils": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

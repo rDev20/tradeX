@@ -1,0 +1,21 @@
+{
+  "name": "@tradex/sdk-client",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Typed API client — generated from the API's OpenAPI spec",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "generate": "openapi-typescript-codegen --input ../../apps/api/openapi.json --output ./src/generated --client fetch",
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tradex/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*",
+    "openapi-typescript-codegen": "^0.29.0"
+  }
+}

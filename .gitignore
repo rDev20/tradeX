@@ -1,0 +1,107 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.Python
+
+# Build outputs
+dist/
+build/
+.next/
+.turbo/
+out/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Environment + secrets
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDE
+.idea/
+.claude/settings.local.json
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+# Temporary
+*.tmp
+*.bak
+*.orig
+.cache/
+tmp/
+.sync-backups/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Sessions / local data
+sessions/
+data/local/
+*.session
+*.session-journal
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+demo/worker/.venv/
+
+# Clerk / auth
+clerk-dev.json
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Misc
+.changeset/*.md
+!.changeset/README.md
+!.changeset/config.json

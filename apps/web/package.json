@@ -1,0 +1,25 @@
+{
+  "name": "@tradex/web",
+  "version": "0.0.1",
+  "private": true,
+  "description": "tradeX user-facing web app (Next.js 15 + React 19)",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "clean": "rm -rf .next .turbo"
+  },
+  "dependencies": {
+    "@tradex/design-tokens": "workspace:*",
+    "@tradex/sdk-client": "workspace:*",
+    "@tradex/types": "workspace:*",
+    "@tradex/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

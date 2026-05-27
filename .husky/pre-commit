@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+
+# Lint staged files
+pnpm exec lint-staged
+
+# Secret scan on staged files
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --verbose
+else
+  echo "⚠️  gitleaks not installed. Install via: brew install gitleaks (macOS) or see https://github.com/gitleaks/gitleaks"
+fi

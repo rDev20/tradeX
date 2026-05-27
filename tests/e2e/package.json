@@ -1,0 +1,16 @@
+{
+  "name": "@tradex/tests-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "End-to-end tests (Playwright)",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "codegen": "playwright codegen"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@tradex/test-utils": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}

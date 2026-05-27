@@ -1,0 +1,16 @@
+{
+  "name": "@tradex/sdk-telegram",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Telegram client wrapper (HTTP bridge to Python Telethon)",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint 'src/**/*.ts' --max-warnings 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tradex/eslint-config": "workspace:*",
+    "@tradex/tsconfig": "workspace:*"
+  }
+}
