@@ -50,7 +50,7 @@ Run "tar.exe" @(
 )
 Pop-Location
 
-@'
+$remoteScriptContent = @'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -96,6 +96,7 @@ rsync -a --delete \
   --exclude '.next' \
   --exclude '.venv' \
   --exclude '__pycache__' \
+  --exclude 'worker/sessions/' \
   --exclude '*.pyc' \
   --exclude 'demo.db' \
   --exclude 'demo.db-journal' \
@@ -114,7 +115,10 @@ if [ "$DEPLOY" = "true" ]; then
 else
   echo "Skipping deploy (--NoDeploy)"
 fi
-'@ | Set-Content -LiteralPath $remoteScript -Encoding ascii
+'@
+
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($remoteScript, ($remoteScriptContent -replace "`r`n", "`n"), $utf8NoBom)
 
 Step "Uploading archive and remote deploy helper"
 Run "scp" @($archive, "$Remote`:$remoteArchive")

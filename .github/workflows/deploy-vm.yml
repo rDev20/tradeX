@@ -79,6 +79,7 @@ jobs:
             --exclude '.next' \
             --exclude '.venv' \
             --exclude '__pycache__' \
+            --exclude 'worker/sessions/' \
             --exclude '*.pyc' \
             --exclude 'demo.db' \
             --exclude 'demo.db-journal' \
