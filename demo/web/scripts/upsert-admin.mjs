@@ -1,7 +1,6 @@
 import bcrypt from "bcryptjs";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { PrismaClient } from "@prisma/client";
 
 function loadLocalEnv() {
   const envPath = resolve(process.cwd(), ".env");
@@ -23,8 +22,6 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
-const db = new PrismaClient();
-
 const ADMIN = {
   email: "bansal.s.karan@gmail.com",
   fullName: "Karaan Bansall",
@@ -41,6 +38,8 @@ function readPassword() {
 }
 
 async function main() {
+  const { PrismaClient } = await import("@prisma/client");
+  const db = new PrismaClient();
   const passwordHash = await bcrypt.hash(readPassword(), 10);
   let user;
 
@@ -79,6 +78,8 @@ async function main() {
       username: ADMIN.username,
     }),
   );
+
+  await db.$disconnect();
 }
 
 function sqlitePathFromDatabaseUrl() {
@@ -141,7 +142,4 @@ main()
   .catch((error) => {
     console.error(error.message);
     process.exitCode = 1;
-  })
-  .finally(async () => {
-    await db.$disconnect();
   });
