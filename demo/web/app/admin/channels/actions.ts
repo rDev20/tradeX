@@ -10,10 +10,19 @@ export async function setSourceChannelSelected(formData: FormData) {
   const selected = String(formData.get("selected") ?? "false") === "true";
   if (!Number.isFinite(id)) return;
 
-  await db.sourceChannel.update({
-    where: { id },
-    data: { selected },
-  });
+  if (selected) {
+    await db.$transaction([
+      db.sourceChannel.updateMany({ data: { selected: false } }),
+      db.sourceChannel.update({ where: { id }, data: { selected: true } }),
+    ]);
+  } else {
+    await db.sourceChannel.update({
+      where: { id },
+      data: { selected: false },
+    });
+  }
+
   revalidatePath("/admin/channels");
+  revalidatePath(`/admin/channels/${id}`);
   revalidatePath("/admin");
 }

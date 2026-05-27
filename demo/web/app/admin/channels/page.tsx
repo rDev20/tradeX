@@ -1,4 +1,5 @@
 import { Check, Radio } from "lucide-react";
+import Link from "next/link";
 import { requireAdminUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { setSourceChannelSelected } from "./actions";
@@ -20,8 +21,8 @@ export default async function AdminChannelsPage() {
         </div>
         <h1 className="text-2xl font-semibold tracking-tight mt-2">Select Telegram channels</h1>
         <p className="text-sm text-[var(--neutral-400)] mt-2 max-w-2xl">
-          These channels are read from the admin Telegram account. Selected channels feed the
-          source message stream in real time.
+          These channels are read from the admin Telegram account. One selected channel feeds the
+          global source message stream in real time.
         </p>
       </div>
 
@@ -53,20 +54,28 @@ export default async function AdminChannelsPage() {
                   {channel._count.messages} messages · {channel._count.signals} signals
                 </div>
               </div>
-              <form action={setSourceChannelSelected}>
-                <input type="hidden" name="id" value={channel.id} />
-                <input type="hidden" name="selected" value={channel.selected ? "false" : "true"} />
-                <button
-                  type="submit"
-                  className={
-                    channel.selected
-                      ? "rounded-md border border-[var(--neutral-700)] px-3 py-2 text-sm text-[var(--neutral-300)] hover:bg-[var(--neutral-800)] transition"
-                      : "rounded-md bg-[var(--tradex-orange-500)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--tradex-orange-600)] transition"
-                  }
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/admin/channels/${channel.id}`}
+                  className="rounded-md border border-[var(--neutral-700)] px-3 py-2 text-sm text-[var(--neutral-200)] hover:bg-[var(--neutral-800)] transition"
                 >
-                  {channel.selected ? "Stop reading" : "Read channel"}
-                </button>
-              </form>
+                  Details
+                </Link>
+                <form action={setSourceChannelSelected}>
+                  <input type="hidden" name="id" value={channel.id} />
+                  <input type="hidden" name="selected" value={channel.selected ? "false" : "true"} />
+                  <button
+                    type="submit"
+                    className={
+                      channel.selected
+                        ? "rounded-md border border-[var(--neutral-700)] px-3 py-2 text-sm text-[var(--neutral-300)] hover:bg-[var(--neutral-800)] transition"
+                        : "rounded-md bg-[var(--tradex-orange-500)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--tradex-orange-600)] transition"
+                    }
+                  >
+                    {channel.selected ? "Stop reading" : "Use globally"}
+                  </button>
+                </form>
+              </div>
             </article>
           ))}
         </div>
