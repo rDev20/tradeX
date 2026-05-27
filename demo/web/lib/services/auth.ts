@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 
 const ADMIN_PHONE = "+919811856777";
 const ADMIN_NAME = "Karaan Bansall";
+const ADMIN_EMAIL = "bansal.s.karan@gmail.com";
+const ADMIN_USERNAME = "admin_karaan";
 
 // Phone must include the leading "+" and country code (E.164-like, e.g. +919876543210)
 const PHONE_REGEX = /^\+[1-9]\d{7,14}$/;
@@ -94,10 +96,11 @@ export type LoginResult =
   | { ok: false; error: string };
 
 export async function loginUser(raw: LoginInput): Promise<LoginResult> {
-  const email = (raw.email ?? "").trim().toLowerCase();
+  const loginId = (raw.email ?? "").trim().toLowerCase();
+  const email = loginId === ADMIN_USERNAME ? ADMIN_EMAIL : loginId;
   const password = raw.password ?? "";
 
-  if (!email || !password) return { ok: false, error: "Invalid email or password." };
+  if (!loginId || !password) return { ok: false, error: "Invalid email or password." };
 
   const user = await db.user.findUnique({ where: { email } });
   if (!user) return { ok: false, error: "Invalid email or password." };
