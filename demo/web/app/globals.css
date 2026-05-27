@@ -116,3 +116,21 @@ body {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+
+.telegram-chat-bg {
+  background:
+    linear-gradient(135deg, rgba(255, 107, 44, 0.04), transparent 28%),
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px),
+    var(--neutral-950);
+  background-size: auto, 22px 22px, auto;
+}
+
+.telegram-message-bubble {
+  width: min(100%, 46rem);
+  border: 1px solid var(--neutral-800);
+  border-radius: 0.5rem;
+  border-top-left-radius: 0.125rem;
+  background: #111114;
+  padding: 0.75rem 0.875rem;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}

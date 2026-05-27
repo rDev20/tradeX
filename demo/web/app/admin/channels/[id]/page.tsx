@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, Clock3, MessageSquare, Radio, Signal } from "lucide-react";
+import { ArrowLeft, Check, MessageSquare, Radio, Signal } from "lucide-react";
 import { requireAdminUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { setSourceChannelSelected } from "../actions";
@@ -20,23 +20,19 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
       _count: { select: { messages: true, signals: true } },
       messages: {
         orderBy: { postedAt: "desc" },
-        take: 12,
+        take: 80,
         include: { signal: true },
-      },
-      signals: {
-        orderBy: { parsedAt: "desc" },
-        take: 8,
       },
     },
   });
   if (!channel) notFound();
 
-  const [messagesToday, parsedToday, latestMessage] = await Promise.all([
+  const [messagesToday, parsedToday] = await Promise.all([
     db.sourceMessage.count({ where: { channelId: id, postedAt: { gte: today } } }),
     db.sourceSignal.count({ where: { channelId: id, parsedAt: { gte: today } } }),
-    db.sourceMessage.findFirst({ where: { channelId: id }, orderBy: { postedAt: "desc" } }),
   ]);
   const parseRate = messagesToday > 0 ? Math.round((parsedToday / messagesToday) * 100) : 0;
+  const messagesOldestFirst = [...channel.messages].reverse();
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -51,7 +47,7 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
         <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-widest text-[var(--neutral-500)]">
-              Source Channel
+              Telegram Channel
             </div>
             <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight">{channel.name}</h1>
             <p className="mt-2 text-sm text-[var(--neutral-400)]">
@@ -65,85 +61,84 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
               type="submit"
               className={
                 channel.selected
-                  ? "rounded-md border border-[var(--neutral-700)] px-3 py-2 text-sm text-[var(--neutral-300)] hover:bg-[var(--neutral-800)] transition"
-                  : "rounded-md bg-[var(--tradex-orange-500)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--tradex-orange-600)] transition"
+                  ? "rounded-md border border-[var(--success)]/40 bg-[var(--success)]/10 px-4 py-2 text-sm font-medium text-[var(--success)] hover:bg-[var(--success)]/15 transition"
+                  : "rounded-md bg-[var(--tradex-orange-500)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--tradex-orange-600)] transition"
               }
             >
-              {channel.selected ? "Stop global broadcast" : "Use as global broadcast"}
+              {channel.selected ? "Global broadcast is ON" : "Use this channel for global broadcast"}
             </button>
           </form>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Stat icon={<Radio size={18} />} label="Global status" value={channel.selected ? "Live" : "Off"} />
+        <Stat icon={<Radio size={18} />} label="Broadcast" value={channel.selected ? "Live" : "Off"} />
         <Stat icon={<MessageSquare size={18} />} label="Messages today" value={`${messagesToday}`} />
-        <Stat icon={<Signal size={18} />} label="Parsed calls today" value={`${parsedToday}`} />
-        <Stat icon={<Check size={18} />} label="Parse efficiency" value={`${parseRate}%`} />
+        <Stat icon={<Signal size={18} />} label="Call messages" value={`${parsedToday}`} />
+        <Stat icon={<Check size={18} />} label="Parse rate" value={`${parseRate}%`} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-900)] p-5">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-sm font-semibold">Latest messages</h2>
-            <span className="text-xs text-[var(--neutral-500)]">
-              {latestMessage ? `Last ${latestMessage.postedAt.toLocaleString()}` : "No messages yet"}
-            </span>
+      <section className="overflow-hidden rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-900)]">
+        <div className="flex items-center justify-between gap-4 border-b border-[var(--neutral-800)] px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">Messages as received</h2>
+            <p className="mt-1 text-xs text-[var(--neutral-500)]">
+              Latest Telegram messages captured from this channel, with received timestamp.
+            </p>
           </div>
-          <div className="mt-4 space-y-3">
-            {channel.messages.length > 0 ? (
-              channel.messages.map((message) => (
-                <article
-                  key={message.id}
-                  className="rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-950)] p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--neutral-500)]">
-                    <span>{message.postedAt.toLocaleString()}</span>
-                    <span className={message.signal ? "text-[var(--success)]" : "text-[var(--neutral-500)]"}>
-                      {message.signal ? "Parsed call" : message.parsed ? "Parsed, no call" : "Pending parse"}
-                    </span>
-                  </div>
-                  <p className="mt-2 line-clamp-5 whitespace-pre-wrap text-sm text-[var(--neutral-300)]">
-                    {message.text}
-                  </p>
-                </article>
-              ))
-            ) : (
-              <p className="text-sm text-[var(--neutral-500)]">No source messages captured for this channel yet.</p>
-            )}
-          </div>
-        </section>
+          <span className="rounded border border-[var(--neutral-700)] px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--neutral-400)]">
+            {channel._count.messages} total
+          </span>
+        </div>
 
-        <section className="rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-900)] p-5">
-          <h2 className="text-sm font-semibold">Parsed call requests</h2>
-          <div className="mt-4 space-y-3">
-            {channel.signals.length > 0 ? (
-              channel.signals.map((signal) => (
-                <article key={signal.id} className="rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-950)] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium">{signal.symbol}</div>
-                    <span className="rounded border border-[var(--info)]/30 bg-[var(--info)]/10 px-2 py-0.5 text-[10px] uppercase tracking-widest text-[var(--info)]">
-                      {signal.side}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[var(--neutral-400)]">
-                    <span>Entry {formatNumber(signal.entry)}</span>
-                    <span>Target {signal.target == null ? "-" : formatNumber(signal.target)}</span>
-                    <span>SL {signal.stopLoss == null ? "-" : formatNumber(signal.stopLoss)}</span>
-                    <span>Confidence {Math.round(signal.confidence * 100)}%</span>
-                  </div>
-                  <div className="mt-3 flex items-center gap-2 text-xs text-[var(--neutral-500)]">
-                    <Clock3 size={12} />
-                    {signal.parsedAt.toLocaleString()}
+        <div className="telegram-chat-bg max-h-[68vh] overflow-y-auto px-4 py-5">
+          {messagesOldestFirst.length > 0 ? (
+            <div className="space-y-4">
+              {messagesOldestFirst.map((message) => (
+                <article key={message.id} className="flex justify-start">
+                  <div className="telegram-message-bubble">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs font-medium text-[var(--tradex-orange-300)]">
+                        {channel.name}
+                      </span>
+                      <span className="text-[11px] text-[var(--neutral-500)]">
+                        {formatTimestamp(message.postedAt)}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--neutral-100)]">
+                      {message.text}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest">
+                      {message.signal ? (
+                        <span className="rounded border border-[var(--success)]/30 bg-[var(--success)]/10 px-2 py-1 text-[var(--success)]">
+                          Call parsed
+                        </span>
+                      ) : message.parsed ? (
+                        <span className="rounded border border-[var(--neutral-700)] px-2 py-1 text-[var(--neutral-500)]">
+                          No call
+                        </span>
+                      ) : (
+                        <span className="rounded border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-2 py-1 text-[var(--warning)]">
+                          Pending parse
+                        </span>
+                      )}
+                      {message.signal && (
+                        <span className="rounded border border-[var(--info)]/30 bg-[var(--info)]/10 px-2 py-1 text-[var(--info)]">
+                          {message.signal.symbol} {message.signal.side} @ {formatNumber(message.signal.entry)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </article>
-              ))
-            ) : (
-              <p className="text-sm text-[var(--neutral-500)]">No valid call requests parsed yet.</p>
-            )}
-          </div>
-        </section>
-      </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-950)] p-6 text-sm text-[var(--neutral-500)]">
+              No Telegram messages captured for this channel yet.
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -165,6 +160,14 @@ function startOfIstDay() {
   const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
   ist.setUTCHours(0, 0, 0, 0);
   return new Date(ist.getTime() - 5.5 * 60 * 60 * 1000);
+}
+
+function formatTimestamp(value: Date) {
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Kolkata",
+  }).format(value);
 }
 
 function formatNumber(value: number) {
