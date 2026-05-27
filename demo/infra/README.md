@@ -135,10 +135,23 @@ If the dry run looks right, deploy:
 bash demo/infra/push.sh    # rsync + auto-trigger deploy.sh on VM
 ```
 
+On Windows PowerShell without Git Bash:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File demo/infra/push.ps1
+```
+
 Or to push without redeploying:
 
 ```bash
 bash demo/infra/push.sh --no-deploy
+ssh tradex-vm 'sudo systemctl restart tradex-web tradex-worker'
+```
+
+PowerShell equivalent:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File demo/infra/push.ps1 -NoDeploy
 ssh tradex-vm 'sudo systemctl restart tradex-web tradex-worker'
 ```
 
