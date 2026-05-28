@@ -1,14 +1,25 @@
 name: Deploy VM
 
 on:
+  push:
+    branches: [develop]
   workflow_run:
     workflows: ["CI"]
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Environment to deploy"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
 
 concurrency:
-  group: deploy-vm-main
+  group: deploy-vm-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name || inputs.target_env }}
   cancel-in-progress: false
 
 jobs:
@@ -17,16 +28,66 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       github.event.workflow_run.conclusion == 'success'
     env:
       VM_HOST: ${{ secrets.VM_HOST }}
       VM_USER: ${{ secrets.VM_USER }}
       VM_PORT: ${{ secrets.VM_PORT || '22' }}
-      VM_DEPLOY_DIR: ${{ secrets.VM_DEPLOY_DIR || '/opt/tradex' }}
-      VM_SUBDOMAIN: ${{ secrets.VM_SUBDOMAIN || '103-240-24-3.nip.io' }}
       VM_SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+      PROD_DEPLOY_DIR: ${{ secrets.VM_DEPLOY_DIR || '/opt/tradex' }}
+      PROD_SUBDOMAIN: ${{ secrets.VM_SUBDOMAIN || '103-240-24-3.nip.io' }}
+      STAGING_DEPLOY_DIR: ${{ secrets.STAGING_DEPLOY_DIR || '/opt/tradex-staging' }}
+      STAGING_SUBDOMAIN: ${{ secrets.STAGING_SUBDOMAIN || 'staging.103-240-24-3.nip.io' }}
     steps:
+      - name: Resolve deployment target
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TARGET_ENV: ${{ inputs.target_env }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            target_env="staging"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            target_env="$INPUT_TARGET_ENV"
+          elif [ "$WORKFLOW_BRANCH" = "main" ]; then
+            target_env="production"
+          else
+            target_env="staging"
+          fi
+
+          if [ "$target_env" = "production" ]; then
+            {
+              echo "environment=production"
+              echo "app_name=tradex"
+              echo "deploy_dir=$PROD_DEPLOY_DIR"
+              echo "subdomain=$PROD_SUBDOMAIN"
+              echo "port=3000"
+              echo "start_worker=1"
+              echo "source_app_dir="
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "environment=staging"
+              echo "app_name=tradex-staging"
+              echo "deploy_dir=$STAGING_DEPLOY_DIR"
+              echo "subdomain=$STAGING_SUBDOMAIN"
+              echo "port=3001"
+              echo "start_worker=0"
+              echo "source_app_dir=$PROD_DEPLOY_DIR"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$target_env" = "production" ] && [ "$REF_NAME" != "main" ]; then
+            echo "Manual production deploys must be run from the main branch."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Validate required secrets
         run: |
@@ -43,17 +104,22 @@ jobs:
           ssh-keyscan -p "$VM_PORT" -H "$VM_HOST" >> ~/.ssh/known_hosts
 
       - name: Prepare VM directory
+        env:
+          DEPLOY_DIR: ${{ steps.target.outputs.deploy_dir }}
         run: |
           ssh -i ~/.ssh/tradex_vm_key -p "$VM_PORT" "$VM_USER@$VM_HOST" \
-            "sudo mkdir -p '$VM_DEPLOY_DIR' && sudo chown -R '$VM_USER:$VM_USER' '$VM_DEPLOY_DIR'"
+            "sudo mkdir -p '$DEPLOY_DIR' && sudo chown -R '$VM_USER:$VM_USER' '$DEPLOY_DIR'"
 
       - name: Create remote safety snapshot
+        env:
+          APP_NAME: ${{ steps.target.outputs.app_name }}
+          DEPLOY_DIR: ${{ steps.target.outputs.deploy_dir }}
         run: |
-          SNAPSHOT="tradex-demo-code-$(date -u +%Y%m%dT%H%M%SZ).tgz"
+          SNAPSHOT="${APP_NAME}-demo-code-$(date -u +%Y%m%dT%H%M%SZ).tgz"
           ssh -i ~/.ssh/tradex_vm_key -p "$VM_PORT" "$VM_USER@$VM_HOST" "
-            sudo mkdir -p '$VM_DEPLOY_DIR/backups' &&
-            if [ -d '$VM_DEPLOY_DIR/demo' ]; then
-              sudo tar -C '$VM_DEPLOY_DIR' \
+            sudo mkdir -p '$DEPLOY_DIR/backups' &&
+            if [ -d '$DEPLOY_DIR/demo' ]; then
+              sudo tar -C '$DEPLOY_DIR' \
                 --exclude='demo/.env' \
                 --exclude='demo/web/.env' \
                 --exclude='demo/demo.db' \
@@ -67,11 +133,13 @@ jobs:
                 --exclude='demo/qa/node_modules' \
                 --exclude='*.pyc' \
                 --exclude='*.log' \
-                -czf '$VM_DEPLOY_DIR/backups/$SNAPSHOT' demo &&
-              sudo chown '$VM_USER:$VM_USER' '$VM_DEPLOY_DIR/backups/$SNAPSHOT';
+                -czf '$DEPLOY_DIR/backups/$SNAPSHOT' demo &&
+              sudo chown '$VM_USER:$VM_USER' '$DEPLOY_DIR/backups/$SNAPSHOT';
             fi"
 
       - name: Sync demo code
+        env:
+          DEPLOY_DIR: ${{ steps.target.outputs.deploy_dir }}
         run: |
           rsync -az --delete \
             --exclude '.git' \
@@ -91,13 +159,22 @@ jobs:
             --exclude '.env' \
             --exclude '.env.local' \
             -e "ssh -i ~/.ssh/tradex_vm_key -p $VM_PORT" \
-            demo/ "$VM_USER@$VM_HOST:$VM_DEPLOY_DIR/demo/"
+            demo/ "$VM_USER@$VM_HOST:$DEPLOY_DIR/demo/"
 
       - name: Deploy on VM
+        env:
+          APP_NAME: ${{ steps.target.outputs.app_name }}
+          DEPLOY_DIR: ${{ steps.target.outputs.deploy_dir }}
+          SUBDOMAIN: ${{ steps.target.outputs.subdomain }}
+          PORT: ${{ steps.target.outputs.port }}
+          START_WORKER: ${{ steps.target.outputs.start_worker }}
+          SOURCE_APP_DIR: ${{ steps.target.outputs.source_app_dir }}
         run: |
           ssh -i ~/.ssh/tradex_vm_key -p "$VM_PORT" "$VM_USER@$VM_HOST" \
-            "sudo SUBDOMAIN='$VM_SUBDOMAIN' bash '$VM_DEPLOY_DIR/demo/infra/deploy.sh'"
+            "sudo APP_NAME='$APP_NAME' APP_DIR='$DEPLOY_DIR' SUBDOMAIN='$SUBDOMAIN' PORT='$PORT' START_WORKER='$START_WORKER' SOURCE_APP_DIR='$SOURCE_APP_DIR' bash '$DEPLOY_DIR/demo/infra/deploy.sh'"
 
       - name: Smoke check public URL
+        env:
+          SUBDOMAIN: ${{ steps.target.outputs.subdomain }}
         run: |
-          curl --fail --location --max-time 30 "https://$VM_SUBDOMAIN/login" >/dev/null
+          curl --fail --location --max-time 30 "https://$SUBDOMAIN/login" >/dev/null
