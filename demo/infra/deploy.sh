@@ -24,6 +24,7 @@ PYTHON_VERSION="${PYTHON_VERSION:-python3.12}"
 WEB_SERVICE="${APP_NAME}-web"
 WORKER_SERVICE="${APP_NAME}-worker"
 SITE_FILE="/etc/caddy/sites-enabled/${APP_NAME}.caddy"
+PRODUCTION_SITE_FILE="/etc/caddy/sites-enabled/tradex.caddy"
 
 log() {
   printf "\n\033[1;34m>\033[0m %s\n" "$*"
@@ -162,6 +163,19 @@ if ! sudo grep -q "import /etc/caddy/sites-enabled/\\*.caddy" /etc/caddy/Caddyfi
 }
 
 import /etc/caddy/sites-enabled/*.caddy
+EOF
+fi
+
+if [ "$APP_NAME" != "tradex" ] && [ ! -f "$PRODUCTION_SITE_FILE" ]; then
+  warn "Creating production Caddy site file during first multi-site deploy"
+  sudo tee "$PRODUCTION_SITE_FILE" >/dev/null <<'EOF'
+103-240-24-3.nip.io {
+  encode gzip
+  reverse_proxy 127.0.0.1:3000
+  log {
+    output file /var/log/caddy/tradex-access.log
+  }
+}
 EOF
 fi
 

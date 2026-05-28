@@ -177,4 +177,11 @@ jobs:
         env:
           SUBDOMAIN: ${{ steps.target.outputs.subdomain }}
         run: |
+          for attempt in {1..12}; do
+            if curl --fail --location --max-time 30 "https://$SUBDOMAIN/login" >/dev/null; then
+              exit 0
+            fi
+            echo "Smoke check attempt $attempt failed; waiting for app/TLS readiness..."
+            sleep 15
+          done
           curl --fail --location --max-time 30 "https://$SUBDOMAIN/login" >/dev/null
