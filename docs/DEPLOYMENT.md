@@ -84,12 +84,13 @@ Staging:
 ```text
 /opt/tradex-staging
 service: tradex-staging-web
-worker: disabled
+service: tradex-staging-worker
 port: 3001
 ```
 
-The staging worker is intentionally disabled so Telegram ingestion and trade
-processing do not run twice.
+The staging worker uses the staging database and staging Telegram session files.
+It can ingest the same Telegram channels as production, but all parsed signals and
+paper trades stay in `/opt/tradex-staging/demo/demo.db`.
 
 ## VM Scripts
 

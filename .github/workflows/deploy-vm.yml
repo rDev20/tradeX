@@ -75,7 +75,7 @@ jobs:
               echo "deploy_dir=$STAGING_DEPLOY_DIR"
               echo "subdomain=$STAGING_SUBDOMAIN"
               echo "port=3001"
-              echo "start_worker=0"
+              echo "start_worker=1"
               echo "source_app_dir=$PROD_DEPLOY_DIR"
             } >> "$GITHUB_OUTPUT"
           fi
