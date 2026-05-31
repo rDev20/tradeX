@@ -283,12 +283,15 @@ model SourceMessage {
   text        String
   postedAt    DateTime
   parsed      Boolean       @default(false)
+  parseStatus String        @default("pending")
   createdAt   DateTime      @default(now())
   signal      SourceSignal?
+  parseAttempts SourceParseAttempt[]
 
   @@unique([channelId, tgMessageId])
   @@index([postedAt])
   @@index([channelId, postedAt])
+  @@index([parseStatus])
 }
 
 model SourceSignal {
@@ -311,6 +314,25 @@ model SourceSignal {
 
   @@index([channelId])
   @@index([parsedAt])
+}
+
+model SourceParseAttempt {
+  id          Int           @id @default(autoincrement())
+  messageId   Int
+  message     SourceMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  channelId   Int
+  parser      String
+  model       String?
+  status      String
+  confidence  Float?
+  promptHash  String?
+  responseJson String?
+  error       String?
+  createdAt   DateTime      @default(now())
+
+  @@index([messageId])
+  @@index([channelId, createdAt])
+  @@index([status])
 }
 
 model UserTradePlan {

@@ -37,17 +37,20 @@ from db import (  # noqa: E402
     insert_parsed_signal,
     insert_price_tick,
     insert_source_message_if_new,
+    insert_source_parse_attempt,
     insert_source_signal,
     link_trade_slip_signal,
     link_trade_slip_trade,
     list_active_users,
     log_service_event,
     mark_message_parsed,
+    mark_source_message_needs_review,
     mark_source_message_parsed,
     mark_trade_slip_failed_by_message,
     selected_channels,
     selected_source_channels,
     signals_without_trades,
+    source_message_context,
     unparsed_messages,
     unparsed_source_messages,
     upsert_channel,
@@ -57,6 +60,7 @@ from db import (  # noqa: E402
     ensure_admin_source_tables,
     get_admin_telegram_account,
 )
+from llm_parser import OLLAMA_MODEL, llm_enabled, parse_with_llm  # noqa: E402
 from parser import parse_signal  # noqa: E402
 from costs import compute_costs  # noqa: E402
 import json as _json  # noqa: E402
@@ -355,11 +359,20 @@ async def sync_source_messages(client: TelegramClient, limit: int = 50) -> int:
 def run_source_parser() -> int:
     parsed = 0
     for msg in unparsed_source_messages(limit=200):
+        message = dict(msg)
         try:
             result = parse_signal(msg["text"])
         except Exception as exc:
             log.warning("source parser error msg=%s: %s", msg["id"], exc)
-            mark_source_message_parsed(msg["id"])
+            insert_source_parse_attempt(
+                message_id=msg["id"],
+                channel_id=msg["channelId"],
+                parser="heuristic",
+                model=None,
+                status="parser_error",
+                error=str(exc),
+            )
+            mark_source_message_needs_review(msg["id"])
             continue
         if result:
             insert_source_signal(
@@ -376,8 +389,63 @@ def run_source_parser() -> int:
                 raw=msg["text"],
                 parser="heuristic",
             )
+            insert_source_parse_attempt(
+                message_id=msg["id"],
+                channel_id=msg["channelId"],
+                parser="heuristic",
+                model=None,
+                status="parsed",
+                confidence=result.confidence,
+            )
+            mark_source_message_parsed(msg["id"], "parsed")
             parsed += 1
-        mark_source_message_parsed(msg["id"])
+            continue
+
+        if llm_enabled():
+            context = [dict(row) for row in source_message_context(msg["channelId"], msg["postedAt"])]
+            outcome = parse_with_llm(message, context)
+            insert_source_parse_attempt(
+                message_id=msg["id"],
+                channel_id=msg["channelId"],
+                parser="ollama",
+                model=OLLAMA_MODEL,
+                status=outcome.status,
+                confidence=outcome.confidence,
+                prompt_hash=outcome.prompt_hash,
+                response_json=outcome.response_json,
+                error=outcome.error,
+            )
+            if outcome.signal:
+                insert_source_signal(
+                    message_id=msg["id"],
+                    channel_id=msg["channelId"],
+                    symbol=outcome.signal.symbol,
+                    side=outcome.signal.side,
+                    instrument=outcome.signal.instrument,
+                    strike=outcome.signal.strike,
+                    entry=outcome.signal.entry,
+                    stop_loss=outcome.signal.stop_loss,
+                    target=outcome.signal.target,
+                    confidence=outcome.signal.confidence,
+                    raw=msg["text"],
+                    parser=f"ollama:{OLLAMA_MODEL}",
+                )
+                mark_source_message_parsed(msg["id"], "parsed")
+                parsed += 1
+            elif outcome.status in {"needs_review", "llm_error", "llm_unavailable"}:
+                mark_source_message_needs_review(msg["id"])
+            else:
+                mark_source_message_parsed(msg["id"], "no_trade")
+            continue
+
+        insert_source_parse_attempt(
+            message_id=msg["id"],
+            channel_id=msg["channelId"],
+            parser="heuristic",
+            model=None,
+            status="no_trade",
+        )
+        mark_source_message_parsed(msg["id"], "no_trade")
     return parsed
 
 

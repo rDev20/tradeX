@@ -1,83 +1,81 @@
 #!/usr/bin/env bash
-# tradeX VM bootstrap — idempotent. Run on the target VM as user `ubuntu` with passwordless sudo.
+# Deploy the tradeX demo app on a VM.
 #
-# What it does:
-#   1. apt update + install Node 20, Python 3.12 venv, Caddy, sqlite3, ufw, fail2ban
-#   2. lock down ufw to ports 22 / 80 / 443
-#   3. install repo at /opt/tradex (rsync from local — see scripts/push.sh)
-#   4. set up Python venv + Telethon + yfinance
-#   5. set up Node deps + Prisma client + production build
-#   6. install systemd units (tradex-web, tradex-worker)
-#   7. configure Caddy with nip.io domain → :3000 (auto Let's Encrypt cert)
-#   8. enable + start services
-#   9. set up daily SQLite backup cron
+# Defaults keep the existing production deployment unchanged:
+#   APP_DIR=/opt/tradex
+#   APP_NAME=tradex
+#   PORT=3000
+#   START_WORKER=1
 #
-# Usage on the VM:
-#   sudo bash /opt/tradex/infra/deploy.sh
+# Staging can use the same script with:
+#   APP_DIR=/opt/tradex-staging APP_NAME=tradex-staging PORT=3001 START_WORKER=0
 
 set -euo pipefail
 
 APP_USER="${APP_USER:-tradex}"
 APP_DIR="${APP_DIR:-/opt/tradex}"
+APP_NAME="${APP_NAME:-tradex}"
 SUBDOMAIN="${SUBDOMAIN:-103-240-24-3.nip.io}"
-NODE_MAJOR=20
-PYTHON_VERSION=python3.12
+PORT="${PORT:-3000}"
+START_WORKER="${START_WORKER:-1}"
+SOURCE_APP_DIR="${SOURCE_APP_DIR:-}"
+PYTHON_VERSION="${PYTHON_VERSION:-python3.12}"
 
-log()  { printf "\n\033[1;34m▶\033[0m %s\n" "$*"; }
-warn() { printf "\033[1;33m!\033[0m %s\n" "$*"; }
+WEB_SERVICE="${APP_NAME}-web"
+WORKER_SERVICE="${APP_NAME}-worker"
+SITE_FILE="/etc/caddy/sites-enabled/${APP_NAME}.caddy"
+PRODUCTION_SITE_FILE="/etc/caddy/sites-enabled/tradex.caddy"
 
-# ─────── Step 1 — System packages ───────
-log "Updating apt & installing system packages"
-sudo apt-get update -y
-sudo apt-get install -y \
-  curl ca-certificates gnupg \
-  build-essential git \
-  python3.12 python3.12-venv python3-pip \
-  sqlite3 \
-  ufw fail2ban
+log() {
+  printf "\n\033[1;34m>\033[0m %s\n" "$*"
+}
 
-# Node 20 (NodeSource)
-if ! command -v node >/dev/null 2>&1 || [[ "$(node --version)" != v${NODE_MAJOR}* ]]; then
-  log "Installing Node ${NODE_MAJOR}"
-  curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | sudo -E bash -
-  sudo apt-get install -y nodejs
-fi
-node --version
-npm --version
+warn() {
+  printf "\033[1;33m!\033[0m %s\n" "$*"
+}
 
-# Caddy (official repo)
-if ! command -v caddy >/dev/null 2>&1; then
-  log "Installing Caddy"
-  sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-  sudo apt-get update -y
-  sudo apt-get install -y caddy
-fi
-caddy version
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1"
+    echo "Run demo/infra/bootstrap-vm.sh on this VM first."
+    exit 1
+  fi
+}
 
-# ─────── Step 2 — Firewall + fail2ban ───────
-log "Configuring ufw firewall"
-sudo ufw --force reset
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw --force enable
-sudo ufw status verbose
+require_command node
+require_command npm
+require_command caddy
+require_command sqlite3
 
-log "Enabling fail2ban"
-sudo systemctl enable --now fail2ban
-
-# ─────── Step 3 — App user ───────
+log "Preparing app user and directories"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
-  log "Creating app user: $APP_USER"
   sudo useradd -r -m -s /bin/bash "$APP_USER"
 fi
-sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-# ─────── Step 4 — Python venv ───────
+sudo mkdir -p "$APP_DIR/demo" /etc/caddy/sites-enabled /var/log/caddy
+sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+sudo chown caddy:caddy /var/log/caddy
+
+if [ -n "$SOURCE_APP_DIR" ]; then
+  log "Copying missing environment files from $SOURCE_APP_DIR"
+  if [ ! -f "$APP_DIR/demo/.env" ] && [ -f "$SOURCE_APP_DIR/demo/.env" ]; then
+    sudo cp "$SOURCE_APP_DIR/demo/.env" "$APP_DIR/demo/.env"
+    sudo chown "$APP_USER:$APP_USER" "$APP_DIR/demo/.env"
+    sudo chmod 600 "$APP_DIR/demo/.env"
+  fi
+  if [ ! -f "$APP_DIR/demo/web/.env" ] && [ -f "$SOURCE_APP_DIR/demo/web/.env" ]; then
+    sudo cp "$SOURCE_APP_DIR/demo/web/.env" "$APP_DIR/demo/web/.env"
+    sudo chown "$APP_USER:$APP_USER" "$APP_DIR/demo/web/.env"
+    sudo chmod 600 "$APP_DIR/demo/web/.env"
+  fi
+fi
+
+if [ ! -f "$APP_DIR/demo/web/.env" ]; then
+  echo "Missing $APP_DIR/demo/web/.env"
+  echo "Create it before deploying this environment."
+  exit 1
+fi
+
 log "Setting up Python venv"
 sudo -u "$APP_USER" bash -c "
   cd '$APP_DIR/demo/worker'
@@ -86,8 +84,7 @@ sudo -u "$APP_USER" bash -c "
   .venv/bin/pip install -r requirements.txt --quiet
 "
 
-# ─────── Step 5 — Node + Prisma + build ───────
-log "Installing Node deps + building Next.js"
+log "Installing Node dependencies and building Next.js"
 sudo -u "$APP_USER" bash -c "
   cd '$APP_DIR/demo/web'
   npm ci --no-audit --no-fund
@@ -96,21 +93,83 @@ sudo -u "$APP_USER" bash -c "
   NODE_OPTIONS='--max-old-space-size=3072' npm run build
 "
 
-# ─────── Step 6 — systemd ───────
-log "Installing systemd units"
-sudo cp "$APP_DIR/demo/infra/systemd/tradex-web.service" /etc/systemd/system/
-sudo cp "$APP_DIR/demo/infra/systemd/tradex-worker.service" /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable tradex-web tradex-worker
+log "Installing systemd services"
+sudo tee "/etc/systemd/system/${WEB_SERVICE}.service" >/dev/null <<EOF
+[Unit]
+Description=tradeX web (${APP_NAME})
+After=network.target
 
-# ─────── Step 7 — Caddy ───────
-log "Configuring Caddy ($SUBDOMAIN)"
-sudo bash -c "cat > /etc/caddy/Caddyfile" <<EOF
+[Service]
+Type=simple
+User=${APP_USER}
+WorkingDirectory=${APP_DIR}/demo/web
+Environment=NODE_ENV=production
+Environment=PORT=${PORT}
+EnvironmentFile=${APP_DIR}/demo/web/.env
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+if [ "$START_WORKER" = "1" ]; then
+  sudo tee "/etc/systemd/system/${WORKER_SERVICE}.service" >/dev/null <<EOF
+[Unit]
+Description=tradeX worker (${APP_NAME})
+After=network.target ${WEB_SERVICE}.service
+
+[Service]
+Type=simple
+User=${APP_USER}
+WorkingDirectory=${APP_DIR}/demo/worker
+EnvironmentFile=${APP_DIR}/demo/.env
+ExecStart=${APP_DIR}/demo/worker/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
+sudo systemctl daemon-reload
+sudo systemctl enable "$WEB_SERVICE"
+
+if [ "$START_WORKER" = "1" ]; then
+  sudo systemctl enable "$WORKER_SERVICE"
+else
+  sudo systemctl disable --now "$WORKER_SERVICE" 2>/dev/null || true
+fi
+
+log "Configuring Caddy site for $SUBDOMAIN"
+if ! sudo grep -q "import /etc/caddy/sites-enabled/\\*.caddy" /etc/caddy/Caddyfile 2>/dev/null; then
+  sudo tee /etc/caddy/Caddyfile >/dev/null <<'EOF'
 {
   email admin@tradex.in
 }
 
-${SUBDOMAIN} {
+import /etc/caddy/sites-enabled/*.caddy
+EOF
+fi
+
+if [ "$APP_NAME" != "tradex" ] && [ ! -f "$PRODUCTION_SITE_FILE" ]; then
+  warn "Creating production Caddy site file during first multi-site deploy"
+  sudo tee "$PRODUCTION_SITE_FILE" >/dev/null <<'EOF'
+103-240-24-3.nip.io {
   encode gzip
   reverse_proxy 127.0.0.1:3000
   log {
@@ -118,49 +177,46 @@ ${SUBDOMAIN} {
   }
 }
 EOF
-sudo mkdir -p /var/log/caddy
-sudo chown caddy:caddy /var/log/caddy
-sudo systemctl restart caddy
+fi
 
-# ─────── Step 8 — start services ───────
-log "Starting tradex-web + tradex-worker"
-sudo systemctl restart tradex-web
-sleep 5
-sudo systemctl restart tradex-worker
-
-# ─────── Step 9 — daily backup cron ───────
-log "Installing daily SQLite backup cron"
-sudo bash -c "cat > /etc/cron.daily/tradex-backup" <<'EOF'
-#!/usr/bin/env bash
-set -e
-DST="/var/backups/tradex"
-mkdir -p "$DST"
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-sqlite3 /opt/tradex/demo/demo.db ".backup '$DST/demo-${TS}.db'"
-# keep last 14
-ls -1t "$DST"/demo-*.db | tail -n +15 | xargs -r rm
+sudo tee "$SITE_FILE" >/dev/null <<EOF
+${SUBDOMAIN} {
+  encode gzip
+  reverse_proxy 127.0.0.1:${PORT}
+  log {
+    output file /var/log/caddy/${APP_NAME}-access.log
+  }
+}
 EOF
-sudo chmod +x /etc/cron.daily/tradex-backup
 
-# ─────── Smoke check ───────
-log "Smoke check"
-sleep 3
-sudo systemctl status tradex-web --no-pager | head -5 || true
-sudo systemctl status tradex-worker --no-pager | head -5 || true
+sudo systemctl reload caddy || sudo systemctl restart caddy
+
+log "Restarting services"
+sudo systemctl restart "$WEB_SERVICE"
+sleep 5
+
+if [ "$START_WORKER" = "1" ]; then
+  sudo systemctl restart "$WORKER_SERVICE"
+fi
+
+log "Service status"
+sudo systemctl status "$WEB_SERVICE" --no-pager | head -5 || true
+if [ "$START_WORKER" = "1" ]; then
+  sudo systemctl status "$WORKER_SERVICE" --no-pager | head -5 || true
+fi
 sudo systemctl status caddy --no-pager | head -5 || true
 
 cat <<EOF
 
-──────────────────────────────────────────────────
-✅ tradeX deploy complete
+tradeX deploy complete
 
-  URL:      https://${SUBDOMAIN}
-  Logs:     sudo journalctl -u tradex-web -f
-            sudo journalctl -u tradex-worker -f
-            sudo tail -f /var/log/caddy/tradex-access.log
-  Status:   systemctl status tradex-web tradex-worker caddy
-
-  Backups:  /var/backups/tradex/  (daily, 14-day retention)
-
-──────────────────────────────────────────────────
+  Environment: ${APP_NAME}
+  URL:         https://${SUBDOMAIN}
+  Web logs:    sudo journalctl -u ${WEB_SERVICE} -f
 EOF
+
+if [ "$START_WORKER" = "1" ]; then
+  cat <<EOF
+  Worker logs: sudo journalctl -u ${WORKER_SERVICE} -f
+EOF
+fi

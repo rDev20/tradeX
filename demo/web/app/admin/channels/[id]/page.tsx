@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, MessageSquare, Radio, Signal, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, ArrowLeft, Check, Clock3, MessageSquare, Radio, Signal, TrendingDown, TrendingUp } from "lucide-react";
 import { requireAdminUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { setSourceChannelSelected } from "../actions";
+import { AdminChannelAutoRefresh } from "./admin-channel-auto-refresh";
 
 type PageProps = { params: Promise<{ id: string }> };
 
@@ -19,7 +20,7 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
     include: {
       _count: { select: { messages: true, signals: true } },
       messages: {
-        orderBy: { postedAt: "desc" },
+        orderBy: [{ postedAt: "desc" }, { id: "desc" }],
         take: 80,
         include: { signal: true },
       },
@@ -32,11 +33,13 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
     db.sourceSignal.count({ where: { channelId: id, parsedAt: { gte: today } } }),
   ]);
   const parseRate = messagesToday > 0 ? Math.round((parsedToday / messagesToday) * 100) : 0;
-  const messagesOldestFirst = [...channel.messages].reverse();
   const parsedMessages = channel.messages.filter((message) => message.signal);
+  const latestMessage = channel.messages[0] ?? null;
+  const receiveHealth = getReceiveHealth(channel.selected, latestMessage);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <AdminChannelAutoRefresh />
       <div>
         <Link
           href="/admin/channels"
@@ -85,24 +88,44 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
             <div>
               <h2 className="text-sm font-semibold">Messages as received</h2>
               <p className="mt-1 text-xs text-[var(--neutral-500)]">
-                Raw Telegram messages with the original Telegram timestamp.
+                Newest first, with the original Telegram timestamp.
               </p>
             </div>
-            <span className="rounded border border-[var(--neutral-700)] px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--neutral-400)]">
-              {channel._count.messages} total
-            </span>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {latestMessage && (
+                <span className="rounded border border-[var(--success)]/30 bg-[var(--success)]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--success)]">
+                  Latest {formatTimestamp(latestMessage.postedAt)}
+                </span>
+              )}
+              <span className="rounded border border-[var(--neutral-700)] px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--neutral-400)]">
+                {channel._count.messages} total
+              </span>
+            </div>
           </div>
 
           <div className="telegram-chat-bg max-h-[72vh] overflow-y-auto px-4 py-5">
-            {messagesOldestFirst.length > 0 ? (
+            {channel.messages.length > 0 ? (
               <div className="space-y-4">
-                {messagesOldestFirst.map((message) => (
+                {channel.messages.map((message, index) => (
                   <article key={message.id} className="flex justify-start">
-                    <div className="telegram-message-bubble">
+                    <div
+                      className={
+                        index === 0
+                          ? "telegram-message-bubble border-[var(--success)]/45 bg-[var(--success)]/5 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
+                          : "telegram-message-bubble"
+                      }
+                    >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-[var(--tradex-orange-300)]">
-                          {channel.name}
-                        </span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium text-[var(--tradex-orange-300)]">
+                            {channel.name}
+                          </span>
+                          {index === 0 && (
+                            <span className="rounded border border-[var(--success)]/30 bg-[var(--success)]/10 px-2 py-0.5 text-[9px] uppercase tracking-widest text-[var(--success)]">
+                              Latest
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[11px] text-[var(--neutral-500)]">
                           {formatTimestamp(message.postedAt)}
                         </span>
@@ -114,6 +137,10 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
                         {message.signal ? (
                           <span className="rounded border border-[var(--success)]/30 bg-[var(--success)]/10 px-2 py-1 text-[var(--success)]">
                             Call parsed
+                          </span>
+                        ) : message.parseStatus === "needs_review" ? (
+                          <span className="rounded border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-2 py-1 text-[var(--warning)]">
+                            Needs review
                           </span>
                         ) : message.parsed ? (
                           <span className="rounded border border-[var(--neutral-700)] px-2 py-1 text-[var(--neutral-500)]">
@@ -207,6 +234,40 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
           </div>
         </div>
       </section>
+
+      <section className="rounded-md border border-[var(--neutral-800)] bg-[var(--neutral-900)] p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Activity size={16} className={receiveHealth.toneClass} />
+              <h2 className="text-sm font-semibold">Message receive engine</h2>
+              <span className={`rounded border px-2 py-1 text-[10px] uppercase tracking-widest ${receiveHealth.badgeClass}`}>
+                {receiveHealth.quality}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[var(--neutral-500)]">
+              Real-time Telegram handler plus history backfill. Status is inferred from the latest stored message on this channel.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[520px]">
+            <EngineMetric label="Telegram time" value={latestMessage ? formatTimestamp(latestMessage.postedAt) : "-"} />
+            <EngineMetric label="Portal received" value={latestMessage ? formatTimestamp(latestMessage.createdAt) : "-"} />
+            <EngineMetric label="Receive latency" value={receiveHealth.latencyLabel} toneClass={receiveHealth.toneClass} />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-5">
+          {receiveHealth.steps.map((step) => (
+            <div key={step.label} className="rounded border border-[var(--neutral-800)] bg-[var(--neutral-950)] px-3 py-2">
+              <div className={`flex items-center gap-2 text-[10px] uppercase tracking-widest ${step.toneClass}`}>
+                <span className={`h-2 w-2 rounded-full ${step.dotClass}`} />
+                {step.status}
+              </div>
+              <div className="mt-2 text-xs font-medium text-[var(--neutral-200)]">{step.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -228,6 +289,26 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded border border-[var(--neutral-800)] bg-[var(--neutral-900)] px-3 py-2">
       <div className="text-[10px] uppercase tracking-widest text-[var(--neutral-500)]">{label}</div>
       <div className="mt-1 font-medium">{value}</div>
+    </div>
+  );
+}
+
+function EngineMetric({
+  label,
+  value,
+  toneClass = "text-[var(--neutral-200)]",
+}: {
+  label: string;
+  value: string;
+  toneClass?: string;
+}) {
+  return (
+    <div className="rounded border border-[var(--neutral-800)] bg-[var(--neutral-950)] px-3 py-2">
+      <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-[var(--neutral-500)]">
+        <Clock3 size={12} />
+        {label}
+      </div>
+      <div className={`mt-1 text-xs font-medium ${toneClass}`}>{value}</div>
     </div>
   );
 }
@@ -299,4 +380,103 @@ function formatTimestamp(value: Date) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
+}
+
+function getReceiveHealth(
+  selected: boolean,
+  latestMessage: { postedAt: Date; createdAt: Date; parsed: boolean; signal: unknown } | null,
+) {
+  if (!selected) {
+    return {
+      quality: "Off",
+      latencyLabel: "-",
+      toneClass: "text-[var(--neutral-500)]",
+      badgeClass: "border-[var(--neutral-700)] text-[var(--neutral-400)]",
+      steps: engineSteps([
+        ["Socket connection", "Off", "neutral"],
+        ["Waiting for update", "Paused", "neutral"],
+        ["Message received", "No feed", "neutral"],
+        ["Message pushed", "No feed", "neutral"],
+        ["Message shown", "No feed", "neutral"],
+      ]),
+    };
+  }
+
+  if (!latestMessage) {
+    return {
+      quality: "Waiting",
+      latencyLabel: "-",
+      toneClass: "text-[var(--warning)]",
+      badgeClass: "border-[var(--warning)]/30 bg-[var(--warning)]/10 text-[var(--warning)]",
+      steps: engineSteps([
+        ["Socket connection", "Ready", "success"],
+        ["Waiting for update", "Active", "warning"],
+        ["Message received", "Pending", "neutral"],
+        ["Message pushed", "Pending", "neutral"],
+        ["Message shown", "Pending", "neutral"],
+      ]),
+    };
+  }
+
+  const latencyMs = Math.max(0, latestMessage.createdAt.getTime() - latestMessage.postedAt.getTime());
+  const latencySeconds = latencyMs / 1000;
+  const quality =
+    latencySeconds <= 5 ? "Excellent" : latencySeconds <= 30 ? "Good" : latencySeconds <= 120 ? "Delayed" : "Backfill";
+  const tone =
+    latencySeconds <= 30 ? "success" : latencySeconds <= 120 ? "warning" : "danger";
+  const parsedStatus = latestMessage.signal ? "Parsed" : latestMessage.parsed ? "No call" : "Parsing";
+
+  return {
+    quality,
+    latencyLabel: formatLatency(latencyMs),
+    toneClass: toneClass(tone),
+    badgeClass: badgeClass(tone),
+    steps: engineSteps([
+      ["Socket connection", "Connected", "success"],
+      ["Waiting for update", "Active", "success"],
+      ["Message received", "Done", tone],
+      ["Message pushed", "Stored", tone],
+      ["Message shown", parsedStatus, latestMessage.parsed ? "success" : "warning"],
+    ]),
+  };
+}
+
+function engineSteps(rows: [label: string, status: string, tone: "success" | "warning" | "danger" | "neutral"][]) {
+  return rows.map(([label, status, tone]) => ({
+    label,
+    status,
+    toneClass: toneClass(tone),
+    dotClass: dotClass(tone),
+  }));
+}
+
+function toneClass(tone: "success" | "warning" | "danger" | "neutral") {
+  if (tone === "success") return "text-[var(--success)]";
+  if (tone === "warning") return "text-[var(--warning)]";
+  if (tone === "danger") return "text-[var(--danger)]";
+  return "text-[var(--neutral-500)]";
+}
+
+function dotClass(tone: "success" | "warning" | "danger" | "neutral") {
+  if (tone === "success") return "bg-[var(--success)]";
+  if (tone === "warning") return "bg-[var(--warning)]";
+  if (tone === "danger") return "bg-[var(--danger)]";
+  return "bg-[var(--neutral-600)]";
+}
+
+function badgeClass(tone: "success" | "warning" | "danger" | "neutral") {
+  if (tone === "success") return "border-[var(--success)]/30 bg-[var(--success)]/10 text-[var(--success)]";
+  if (tone === "warning") return "border-[var(--warning)]/30 bg-[var(--warning)]/10 text-[var(--warning)]";
+  if (tone === "danger") return "border-[var(--danger)]/30 bg-[var(--danger)]/10 text-[var(--danger)]";
+  return "border-[var(--neutral-700)] text-[var(--neutral-400)]";
+}
+
+function formatLatency(milliseconds: number) {
+  if (milliseconds < 1000) return `${milliseconds} ms`;
+  const seconds = milliseconds / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)} sec`;
+  const minutes = seconds / 60;
+  if (minutes < 60) return `${minutes.toFixed(minutes < 10 ? 1 : 0)} min`;
+  const hours = minutes / 60;
+  return `${hours.toFixed(hours < 10 ? 1 : 0)} hr`;
 }
