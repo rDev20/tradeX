@@ -138,6 +138,10 @@ export default async function AdminChannelDetailPage({ params }: PageProps) {
                           <span className="rounded border border-[var(--success)]/30 bg-[var(--success)]/10 px-2 py-1 text-[var(--success)]">
                             Call parsed
                           </span>
+                        ) : message.parseStatus === "needs_review" ? (
+                          <span className="rounded border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-2 py-1 text-[var(--warning)]">
+                            Needs review
+                          </span>
                         ) : message.parsed ? (
                           <span className="rounded border border-[var(--neutral-700)] px-2 py-1 text-[var(--neutral-500)]">
                             No call

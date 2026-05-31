@@ -133,6 +133,16 @@ def ensure_admin_source_tables() -> None:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS SourceMessage_channelId_tgMessageId_key ON SourceMessage(channelId, tgMessageId)")
         c.execute("CREATE INDEX IF NOT EXISTS SourceMessage_postedAt_idx ON SourceMessage(postedAt)")
         c.execute("CREATE INDEX IF NOT EXISTS SourceMessage_channelId_postedAt_idx ON SourceMessage(channelId, postedAt)")
+        source_message_columns = {row["name"] for row in c.execute("PRAGMA table_info(SourceMessage)").fetchall()}
+        if "parseStatus" not in source_message_columns:
+            c.execute("ALTER TABLE SourceMessage ADD COLUMN parseStatus TEXT NOT NULL DEFAULT 'pending'")
+            c.execute(
+                "UPDATE SourceMessage SET parseStatus = CASE "
+                "WHEN parsed = 0 THEN 'pending' "
+                "WHEN EXISTS(SELECT 1 FROM SourceSignal s WHERE s.messageId = SourceMessage.id) THEN 'parsed' "
+                "ELSE 'no_trade' END"
+            )
+        c.execute("CREATE INDEX IF NOT EXISTS SourceMessage_parseStatus_idx ON SourceMessage(parseStatus)")
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS SourceSignal (
@@ -157,6 +167,27 @@ def ensure_admin_source_tables() -> None:
         )
         c.execute("CREATE INDEX IF NOT EXISTS SourceSignal_channelId_idx ON SourceSignal(channelId)")
         c.execute("CREATE INDEX IF NOT EXISTS SourceSignal_parsedAt_idx ON SourceSignal(parsedAt)")
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS SourceParseAttempt (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              messageId INTEGER NOT NULL,
+              channelId INTEGER NOT NULL,
+              parser TEXT NOT NULL,
+              model TEXT,
+              status TEXT NOT NULL,
+              confidence REAL,
+              promptHash TEXT,
+              responseJson TEXT,
+              error TEXT,
+              createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY(messageId) REFERENCES SourceMessage(id) ON DELETE CASCADE
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS SourceParseAttempt_messageId_idx ON SourceParseAttempt(messageId)")
+        c.execute("CREATE INDEX IF NOT EXISTS SourceParseAttempt_channelId_createdAt_idx ON SourceParseAttempt(channelId, createdAt)")
+        c.execute("CREATE INDEX IF NOT EXISTS SourceParseAttempt_status_idx ON SourceParseAttempt(status)")
 
 
 def _slip_id_for_message(c: sqlite3.Connection, message_id: int) -> int | None:
@@ -555,8 +586,8 @@ def insert_source_message_if_new(
         if row:
             return None
         cur = c.execute(
-            "INSERT INTO SourceMessage(channelId, tgMessageId, text, postedAt, parsed, createdAt) "
-            "VALUES(?, ?, ?, ?, 0, ?)",
+            "INSERT INTO SourceMessage(channelId, tgMessageId, text, postedAt, parsed, parseStatus, createdAt) "
+            "VALUES(?, ?, ?, ?, 0, 'pending', ?)",
             (channel_id, tg_message_id, text, iso(posted_at), iso()),
         )
         return cur.lastrowid
@@ -566,17 +597,55 @@ def unparsed_source_messages(limit: int = 200) -> list[sqlite3.Row]:
     ensure_admin_source_tables()
     with conn() as c:
         return c.execute(
-            "SELECT m.id, m.channelId, m.text, m.postedAt, c.tgId AS cTgId "
+            "SELECT m.id, m.channelId, m.text, m.postedAt, m.parseStatus, c.tgId AS cTgId, c.name AS channelName "
             "FROM SourceMessage m JOIN SourceChannel c ON c.id = m.channelId "
-            "WHERE m.parsed = 0 AND c.selected = 1 "
+            "WHERE m.parsed = 0 AND m.parseStatus = 'pending' AND c.selected = 1 "
             "ORDER BY m.postedAt ASC LIMIT ?",
             (limit,),
         ).fetchall()
 
 
-def mark_source_message_parsed(message_id: int) -> None:
+def mark_source_message_parsed(message_id: int, status: str = "no_trade") -> None:
     with conn() as c:
-        c.execute("UPDATE SourceMessage SET parsed = 1 WHERE id = ?", (message_id,))
+        c.execute("UPDATE SourceMessage SET parsed = 1, parseStatus = ? WHERE id = ?", (status, message_id))
+
+
+def mark_source_message_needs_review(message_id: int) -> None:
+    with conn() as c:
+        c.execute("UPDATE SourceMessage SET parsed = 1, parseStatus = 'needs_review' WHERE id = ?", (message_id,))
+
+
+def source_message_context(channel_id: int, posted_at: str, limit: int = 16) -> list[sqlite3.Row]:
+    ensure_admin_source_tables()
+    with conn() as c:
+        return c.execute(
+            "SELECT id, tgMessageId, text, postedAt, parseStatus "
+            "FROM SourceMessage "
+            "WHERE channelId = ? AND postedAt <= ? "
+            "ORDER BY postedAt DESC, id DESC LIMIT ?",
+            (channel_id, posted_at, limit),
+        ).fetchall()[::-1]
+
+
+def insert_source_parse_attempt(
+    message_id: int,
+    channel_id: int,
+    parser: str,
+    model: str | None,
+    status: str,
+    confidence: float | None = None,
+    prompt_hash: str | None = None,
+    response_json: str | None = None,
+    error: str | None = None,
+) -> int:
+    ensure_admin_source_tables()
+    with conn() as c:
+        cur = c.execute(
+            "INSERT INTO SourceParseAttempt(messageId, channelId, parser, model, status, confidence, promptHash, responseJson, error, createdAt) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (message_id, channel_id, parser, model, status, confidence, prompt_hash, response_json, error, iso()),
+        )
+        return cur.lastrowid
 
 
 def insert_source_signal(
@@ -604,4 +673,5 @@ def insert_source_signal(
                 strike, entry, stop_loss, target, confidence, raw, parser, iso(),
             ),
         )
+        c.execute("UPDATE SourceMessage SET parseStatus = 'parsed' WHERE id = ?", (message_id,))
         return cur.lastrowid
